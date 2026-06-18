@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monitor de Temperatura</title>
+<style>
+  :root {
+    --bg: #0f1419;
+    --card: #1a212b;
+    --card2: #232c38;
+    --txt: #e6edf3;
+    --muted: #8b98a5;
+    --accent: #ff7b54;
+    --accent2: #54a0ff;
+    --border: #2d3744;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--txt);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.5;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 16px 64px; }
+  header h1 { margin: 0 0 4px; font-size: 1.6rem; }
+  header .range { color: var(--muted); font-size: .95rem; }
+  .room-tabs { display: flex; gap: 8px; margin: 16px 0; flex-wrap: wrap; }
+  .room-tabs button {
+    background: var(--card); color: var(--txt); border: 1px solid var(--border);
+    padding: 8px 16px; border-radius: 999px; cursor: pointer; font-size: .9rem;
+  }
+  .room-tabs button.active { background: var(--accent); border-color: var(--accent); color: #1a1209; font-weight: 600; }
+  .period-bar { display: flex; align-items: center; gap: 14px; margin: 18px 0 4px; flex-wrap: wrap; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
+  .seg button { background: var(--card); color: var(--muted); border: none; padding: 8px 18px; cursor: pointer; font-size: .9rem; }
+  .seg button.active { background: var(--accent2); color: #08111f; font-weight: 600; }
+  .period-bar select, .period-bar input[type=date] { background: var(--card2); color: var(--txt); border: 1px solid var(--border); padding: 9px 12px; border-radius: 10px; font-size: .9rem; min-width: 180px; color-scheme: dark; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin: 14px 0 20px; }
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 18px 20px;
+  }
+  .card .label { color: var(--muted); font-size: .85rem; display: flex; align-items: center; gap: 6px; }
+  .card .value { font-size: 2rem; font-weight: 700; margin: 6px 0 2px; }
+  .card .value.hot { color: var(--accent); }
+  .card .value.cold { color: var(--accent2); }
+  .card .sub { color: var(--muted); font-size: .8rem; }
+  .card .multi { display: flex; gap: 18px; }
+  .card .multi div span { display: block; }
+  .btn-more {
+    display: inline-block; margin: 8px 0 24px; background: var(--card2);
+    color: var(--txt); border: 1px solid var(--border); padding: 12px 22px;
+    border-radius: 12px; cursor: pointer; font-size: 1rem;
+  }
+  .btn-more:hover { border-color: var(--accent); }
+  #detail { display: none; }
+  #detail.open { display: block; }
+  .section { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px; margin-bottom: 22px; }
+  .section h2 { margin: 0 0 14px; font-size: 1.1rem; }
+  .toggles { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 12px; color: var(--muted); font-size: .9rem; }
+  .toggles label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  .controls { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+  .controls select, .controls input {
+    background: var(--card2); color: var(--txt); border: 1px solid var(--border);
+    padding: 8px 10px; border-radius: 8px; font-size: .9rem;
+  }
+  .plot { width: 100%; height: 420px; }
+  .plot-sm { width: 100%; height: 360px; }
+  table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+  th, td { padding: 8px 10px; text-align: right; border-bottom: 1px solid var(--border); }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--muted); cursor: pointer; user-select: none; position: sticky; top: 0; background: var(--card); }
+  th:hover { color: var(--txt); }
+  .table-scroll { max-height: 460px; overflow-y: auto; }
+  .muted { color: var(--muted); }
+  .bar-row { margin: 14px 0; }
+  .bar-row .bl { display: flex; justify-content: space-between; font-size: .9rem; margin-bottom: 6px; }
+  .bar-row .bl b { font-size: 1.05rem; }
+  .bar-track { background: var(--card2); border-radius: 999px; height: 14px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 999px; }
+  .legend { color: var(--muted); font-size: .9rem; margin: -4px 0 14px; max-width: 760px; }
+  .btn-clear { background: var(--card2); color: var(--muted); border: 1px solid var(--border); padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: .85rem; }
+  .btn-clear:hover { color: var(--txt); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1 id="title">Monitor de Temperatura</h1>
+    <div class="range" id="range"></div>
+  </header>
+
+  <div class="room-tabs" id="roomTabs"></div>
+
+  <div class="period-bar">
+    <div class="seg">
+      <button id="modeWeek" class="active" data-mode="week">Por semana</button>
+      <button id="modeMonth" data-mode="month">Por mes</button>
+    </div>
+    <input type="date" id="weekPick">
+    <select id="periodSel"></select>
+    <span class="muted" id="weekRange"></span>
+  </div>
+
+  <div class="cards" id="cards"></div>
+
+  <div id="detail" class="open">
+    <div class="section">
+      <h2>Tendencia general (por hora)</h2>
+      <div class="toggles">
+        <label><input type="checkbox" data-var="temp" checked> Temperatura</label>
+        <label><input type="checkbox" data-var="rh" checked> Humedad relativa</label>
+        <label><input type="checkbox" data-var="dpt"> Punto de rocío</label>
+        <label><input type="checkbox" data-var="vpd"> VPD</label>
+        <label><input type="checkbox" data-var="abs"> Humedad absoluta</label>
+      </div>
+      <div id="plotMain" class="plot"></div>
+      <div class="muted" style="font-size:.8rem;margin-top:6px">Arrastra para hacer zoom · doble clic para restablecer</div>
+    </div>
+
+    <div class="section">
+      <h2>Detalle por día (por minuto)</h2>
+      <div class="controls">
+        <label class="muted" for="daySel">Día:</label>
+        <select id="daySel"></select>
+      </div>
+      <div id="plotDay" class="plot-sm"></div>
+    </div>
+
+    <div class="section">
+      <h2>Confort térmico</h2>
+      <p class="legend">Mide qué tanto tiempo la habitación estuvo dentro de un rango cómodo
+      para dormir y estar. La barra muestra el porcentaje del tiempo en que la temperatura y la
+      humedad cayeron dentro del rango objetivo. Más alto = más confortable.</p>
+      <div class="controls">
+        <label class="muted">Mostrar:</label>
+        <div class="seg">
+          <button class="active" data-comf="all">Todo el periodo</button>
+          <button data-comf="day">Un día</button>
+        </div>
+        <input type="date" id="comfortDay" style="display:none">
+      </div>
+      <p class="muted" id="comfortDesc"></p>
+      <div id="comfortBars"></div>
+    </div>
+
+    <div class="section">
+      <h2>Patrón día / noche (promedio por hora)</h2>
+      <p class="legend">La línea continua promedia todas las lecturas según la hora del día (ciclo
+      típico del cuarto). Elige un día para superponerlo (línea punteada) y compararlo contra ese
+      promedio típico.</p>
+      <div class="controls">
+        <label class="muted" for="patternDay">Comparar con el día:</label>
+        <input type="date" id="patternDay">
+        <button class="btn-clear" id="patternClear">Quitar</button>
+      </div>
+      <div id="plotPattern" class="plot-sm"></div>
+    </div>
+
+    <div class="section">
+      <h2>Mapa de calor</h2>
+      <p class="legend">Cada celda es la temperatura promedio en una franja de tiempo; el color va
+      de azul (frío) a rojo (caliente). Permite detectar de un vistazo horas o días inusualmente
+      cálidos o fríos. Elige la vista:</p>
+      <div class="controls">
+        <div class="seg">
+          <button class="active" data-hm="day">Día × hora</button>
+          <button data-hm="month">Mes × hora</button>
+          <button data-hm="single">Un día</button>
+        </div>
+        <input type="date" id="heatmapDay" style="display:none">
+      </div>
+      <div id="plotHeatmap" style="width:100%;height:560px"></div>
+    </div>
+
+  </div>
+</div>
+
+<script>/*__PLOTLY_JS__*/</script>
+<script>
+const ROOMS = /*__DATA_JSON__*/;
+const roomNames = Object.keys(ROOMS);
+let currentRoom = roomNames[0];
+
+const PLOT_LAYOUT = {
+  paper_bgcolor: '#1a212b', plot_bgcolor: '#1a212b',
+  font: { color: '#e6edf3' }, margin: { t: 20, r: 50, b: 40, l: 50 },
+  legend: { orientation: 'h', y: -0.2 },
+  xaxis: { gridcolor: '#2d3744' },
+};
+const PLOT_CONFIG = { responsive: true, displaylogo: false, locale: 'es' };
+
+const VARS = {
+  temp: { name: 'Temperatura (°C)', color: '#ff7b54', axis: 'y' },
+  rh:   { name: 'Humedad relativa (%)', color: '#54a0ff', axis: 'y2' },
+  dpt:  { name: 'Punto de rocío (°C)', color: '#5fd0a0', axis: 'y' },
+  vpd:  { name: 'VPD (kPa)', color: '#c792ea', axis: 'y3' },
+  abs:  { name: 'Humedad absoluta (g/m³)', color: '#ffd166', axis: 'y2' },
+};
+
+function fmt(v, n) { return v == null ? '—' : Number(v).toFixed(n); }
+
+function renderTabs() {
+  const el = document.getElementById('roomTabs');
+  if (roomNames.length < 2) { el.style.display = 'none'; return; }
+  el.innerHTML = '';
+  roomNames.forEach(name => {
+    const b = document.createElement('button');
+    b.textContent = name;
+    b.className = name === currentRoom ? 'active' : '';
+    b.onclick = () => { currentRoom = name; renderAll(); };
+    el.appendChild(b);
+  });
+}
+
+function renderHeader() {
+  const s = ROOMS[currentRoom].summary;
+  document.getElementById('title').textContent = currentRoom + ' · Monitor de Temperatura';
+  document.getElementById('range').textContent =
+    `Del ${s.date_start} al ${s.date_end} · ${s.n.toLocaleString('es-MX')} lecturas`;
+}
+
+let periodMode = 'week';   // 'week' | 'month'
+let periodIdx = 0;
+
+function periodList() {
+  return periodMode === 'week' ? ROOMS[currentRoom].weeks : ROOMS[currentRoom].months;
+}
+
+function weekIdxForDate(iso) {
+  const weeks = ROOMS[currentRoom].weeks;
+  for (let i = 0; i < weeks.length; i++) {
+    if (iso >= weeks[i].start_iso && iso <= weeks[i].end_iso) return i;
+  }
+  if (iso < weeks[0].start_iso) return 0;
+  return weeks.length - 1;
+}
+
+function renderPeriodSelector() {
+  const list = periodList();
+  if (periodIdx >= list.length) periodIdx = list.length - 1;
+  const sel = document.getElementById('periodSel');
+  const pick = document.getElementById('weekPick');
+  const range = document.getElementById('weekRange');
+
+  if (periodMode === 'week') {
+    const weeks = ROOMS[currentRoom].weeks;
+    sel.style.display = 'none';
+    pick.style.display = '';
+    range.style.display = '';
+    pick.min = weeks[0].start_iso;
+    pick.max = weeks[weeks.length - 1].end_iso;
+    // valor = inicio de la semana seleccionada
+    pick.value = weeks[periodIdx].start_iso;
+    range.textContent = 'Semana: ' + weeks[periodIdx].label;
+  } else {
+    pick.style.display = 'none';
+    range.style.display = 'none';
+    sel.style.display = '';
+    sel.innerHTML = list.map((p, i) => `<option value="${i}">${p.label}</option>`).join('');
+    sel.value = periodIdx;
+  }
+}
+
+function renderCards() {
+  const p = periodList()[periodIdx];
+  if (!p) { document.getElementById('cards').innerHTML = ''; return; }
+  document.getElementById('cards').innerHTML = `
+    <div class="card">
+      <div class="label">🌡️ Temperatura máxima</div>
+      <div class="value hot">${fmt(p.temp_max,1)} °C</div>
+      <div class="sub">${p.temp_max_when}</div>
+    </div>
+    <div class="card">
+      <div class="label">🌡️ Temperatura mínima</div>
+      <div class="value cold">${fmt(p.temp_min,1)} °C</div>
+      <div class="sub">${p.temp_min_when}</div>
+    </div>
+    <div class="card">
+      <div class="label">💧 Humedad máxima</div>
+      <div class="value" style="color:var(--accent2)">${p.rh_max}%</div>
+      <div class="sub">${p.rh_max_when}</div>
+    </div>
+    <div class="card">
+      <div class="label">💧 Humedad mínima</div>
+      <div class="value" style="color:#5fd0a0">${p.rh_min}%</div>
+      <div class="sub">${p.rh_min_when}</div>
+    </div>`;
+}
+
+document.querySelectorAll('.seg button[data-mode]').forEach(b => {
+  b.onclick = () => {
+    periodMode = b.dataset.mode;
+    periodIdx = 0;
+    document.querySelectorAll('.seg button[data-mode]').forEach(x => x.classList.toggle('active', x === b));
+    renderPeriodSelector();
+    renderCards();
+  };
+});
+document.getElementById('periodSel').onchange = (e) => {
+  periodIdx = +e.target.value;
+  renderCards();
+};
+document.getElementById('weekPick').onchange = (e) => {
+  periodIdx = weekIdxForDate(e.target.value);
+  renderPeriodSelector();
+  renderCards();
+};
+
+function activeVars() {
+  return [...document.querySelectorAll('.toggles input:checked')].map(c => c.dataset.var);
+}
+
+function renderMainPlot() {
+  const h = ROOMS[currentRoom].hourly;
+  const sel = activeVars();
+  const traces = sel.map(v => ({
+    x: h.t, y: h[v], name: VARS[v].name, type: 'scatter', mode: 'lines',
+    line: { color: VARS[v].color, width: 1.3 }, yaxis: VARS[v].axis,
+  }));
+  const c = ROOMS[currentRoom].comfort;
+  const shapes = sel.includes('temp') ? [{
+    type: 'rect', xref: 'paper', x0: 0, x1: 1, yref: 'y',
+    y0: c.t_lo, y1: c.t_hi, fillcolor: '#5fd0a0', opacity: 0.10,
+    line: { width: 0 }, layer: 'below',
+  }] : [];
+  const layout = Object.assign({}, PLOT_LAYOUT, {
+    yaxis:  { title: '°C', gridcolor: '#2d3744' },
+    yaxis2: { title: '%', overlaying: 'y', side: 'right', showgrid: false },
+    yaxis3: { title: 'kPa', overlaying: 'y', side: 'right', position: 0.97, showgrid: false, visible: sel.includes('vpd') },
+    shapes,
+  });
+  Plotly.react('plotMain', traces, layout, PLOT_CONFIG);
+}
+
+function daysList() { return Object.keys(ROOMS[currentRoom].daily_detail).sort(); }
+function isoToLabel(iso) { const [y,m,d]=iso.split('-'); return `${d}/${m}/${y}`; }
+
+// Promedio por hora (0-23) de un día desde el detalle por minuto
+function dayHourly(day) {
+  const d = ROOMS[currentRoom].daily_detail[day];
+  if (!d) return null;
+  const ts = Array.from({length:24}, () => []);
+  const rs = Array.from({length:24}, () => []);
+  d.hm.forEach((hm, i) => {
+    const h = +hm.slice(0,2);
+    if (d.temp[i] != null) ts[h].push(d.temp[i]);
+    if (d.rh[i] != null) rs[h].push(d.rh[i]);
+  });
+  const avg = a => a.length ? a.reduce((x,y)=>x+y,0)/a.length : null;
+  return {
+    temp: ts.map(a => a.length ? +avg(a).toFixed(2) : null),
+    rh: rs.map(a => a.length ? +avg(a).toFixed(1) : null),
+  };
+}
+
+let comfortMode = 'all';   // 'all' | 'day'
+function renderComfort() {
+  const c = ROOMS[currentRoom].comfort;
+  const desc = document.getElementById('comfortDesc');
+  let temp_pct, rh_pct, both_pct;
+  if (comfortMode === 'day') {
+    const day = document.getElementById('comfortDay').value;
+    const d = ROOMS[currentRoom].daily_detail[day];
+    if (!d) { document.getElementById('comfortBars').innerHTML = '<p class="muted">Sin datos para ese día.</p>'; desc.textContent=''; return; }
+    let it=0,ih=0,n=0;
+    d.temp.forEach((t,i) => {
+      const r = d.rh[i];
+      if (t==null || r==null) return;
+      n++;
+      if (t>=c.t_lo && t<=c.t_hi) it++;
+      if (r>=c.h_lo && r<=c.h_hi) ih++;
+    });
+    let both=0;
+    d.temp.forEach((t,i) => { const r=d.rh[i]; if (t!=null&&r!=null&&t>=c.t_lo&&t<=c.t_hi&&r>=c.h_lo&&r<=c.h_hi) both++; });
+    temp_pct = n? +(it/n*100).toFixed(1):0;
+    rh_pct = n? +(ih/n*100).toFixed(1):0;
+    both_pct = n? +(both/n*100).toFixed(1):0;
+    desc.textContent = `Día ${isoToLabel(day)} · rango objetivo: ${c.t_lo}–${c.t_hi} °C, ${c.h_lo}–${c.h_hi} %.`;
+  } else {
+    temp_pct=c.temp_pct; rh_pct=c.rh_pct; both_pct=c.both_pct;
+    desc.textContent = `Todo el periodo · rango objetivo: ${c.t_lo}–${c.t_hi} °C, ${c.h_lo}–${c.h_hi} %.`;
+  }
+  const bar = (label, pct, color) => `
+    <div class="bar-row">
+      <div class="bl"><span>${label}</span><b>${pct}%</b></div>
+      <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${color}"></div></div>
+    </div>`;
+  document.getElementById('comfortBars').innerHTML =
+    bar(`Temperatura en ${c.t_lo}–${c.t_hi} °C`, temp_pct, '#ff7b54') +
+    bar(`Humedad en ${c.h_lo}–${c.h_hi} %`, rh_pct, '#54a0ff') +
+    bar('Ambos a la vez (confort)', both_pct, '#5fd0a0');
+}
+
+let patternDay = null;
+function renderPattern() {
+  const p = ROOMS[currentRoom].pattern;
+  const traces = [
+    { x: p.hours, y: p.temp, name: 'Temp. típica (°C)', type: 'scatter', mode: 'lines+markers', line: { color: VARS.temp.color } },
+    { x: p.hours, y: p.rh, name: 'Humedad típica (%)', type: 'scatter', mode: 'lines+markers', line: { color: VARS.rh.color }, yaxis: 'y2' },
+  ];
+  if (patternDay) {
+    const dh = dayHourly(patternDay);
+    if (dh) {
+      const lbl = isoToLabel(patternDay);
+      traces.push({ x: p.hours, y: dh.temp, name: `Temp. ${lbl}`, type: 'scatter', mode: 'lines', line: { color: VARS.temp.color, dash: 'dot', width: 2 } });
+      traces.push({ x: p.hours, y: dh.rh, name: `Humedad ${lbl}`, type: 'scatter', mode: 'lines', line: { color: VARS.rh.color, dash: 'dot', width: 2 }, yaxis: 'y2' });
+    }
+  }
+  const layout = Object.assign({}, PLOT_LAYOUT, {
+    yaxis:  { title: '°C', gridcolor: '#2d3744' },
+    yaxis2: { title: '%', overlaying: 'y', side: 'right', showgrid: false },
+    xaxis:  { title: 'Hora del día', gridcolor: '#2d3744' },
+  });
+  Plotly.react('plotPattern', traces, layout, PLOT_CONFIG);
+}
+
+let heatmapMode = 'day';   // 'day' | 'month' | 'single'
+function renderHeatmap() {
+  const el = document.getElementById('plotHeatmap');
+  let y, z, hours, ytitle, height;
+  if (heatmapMode === 'day') {
+    const hm = ROOMS[currentRoom].heatmap;
+    y = hm.days.map(d => { const [yy,m,dd]=d.split('-'); return `${dd}/${m}`; });
+    z = hm.z; hours = hm.hours; ytitle = 'Día'; height = 560;
+  } else if (heatmapMode === 'month') {
+    const hm = ROOMS[currentRoom].heatmap_month;
+    y = hm.months; z = hm.z; hours = hm.hours; ytitle = 'Mes'; height = 320;
+  } else {
+    const day = document.getElementById('heatmapDay').value;
+    const dh = dayHourly(day);
+    hours = ROOMS[currentRoom].heatmap.hours;
+    if (!dh) { el.innerHTML = '<p class="muted">Sin datos para ese día.</p>'; return; }
+    y = [isoToLabel(day)]; z = [dh.temp]; ytitle = ''; height = 200;
+  }
+  el.style.height = height + 'px';
+  const trace = {
+    z, x: hours, y, type: 'heatmap',
+    colorscale: 'RdBu', reversescale: true,
+    colorbar: { title: '°C' }, hovertemplate: '%{y} · %{x}<br>%{z} °C<extra></extra>',
+  };
+  const layout = Object.assign({}, PLOT_LAYOUT, {
+    margin: { t: 20, r: 20, b: 50, l: 70 },
+    xaxis: { title: 'Hora del día', gridcolor: '#2d3744' },
+    yaxis: { title: ytitle, autorange: 'reversed', gridcolor: '#2d3744' },
+  });
+  Plotly.react('plotHeatmap', [trace], layout, PLOT_CONFIG);
+}
+document.querySelectorAll('.seg button[data-hm]').forEach(b => {
+  b.onclick = () => {
+    heatmapMode = b.dataset.hm;
+    document.querySelectorAll('.seg button[data-hm]').forEach(x => x.classList.toggle('active', x === b));
+    document.getElementById('heatmapDay').style.display = heatmapMode === 'single' ? '' : 'none';
+    renderHeatmap();
+  };
+});
+document.getElementById('heatmapDay').onchange = renderHeatmap;
+
+document.querySelectorAll('.seg button[data-comf]').forEach(b => {
+  b.onclick = () => {
+    comfortMode = b.dataset.comf;
+    document.querySelectorAll('.seg button[data-comf]').forEach(x => x.classList.toggle('active', x === b));
+    document.getElementById('comfortDay').style.display = comfortMode === 'day' ? '' : 'none';
+    renderComfort();
+  };
+});
+document.getElementById('comfortDay').onchange = renderComfort;
+
+document.getElementById('patternDay').onchange = (e) => { patternDay = e.target.value; renderPattern(); };
+document.getElementById('patternClear').onclick = () => { patternDay = null; document.getElementById('patternDay').value = ''; renderPattern(); };
+
+function initDayPickers() {
+  const days = daysList();
+  const lo = days[0], hi = days[days.length - 1];
+  ['comfortDay', 'patternDay', 'heatmapDay'].forEach(id => {
+    const el = document.getElementById(id);
+    el.min = lo; el.max = hi;
+    if (!el.value) el.value = hi;
+  });
+}
+
+function renderDaySelector() {
+  const days = Object.keys(ROOMS[currentRoom].daily_detail).sort();
+  const sel = document.getElementById('daySel');
+  sel.innerHTML = '';
+  days.forEach(d => {
+    const o = document.createElement('option');
+    o.value = d;
+    const [y, m, dd] = d.split('-');
+    o.textContent = `${dd}/${m}/${y}`;
+    sel.appendChild(o);
+  });
+  sel.value = days[days.length - 1];
+  sel.onchange = renderDayPlot;
+  renderDayPlot();
+}
+
+function renderDayPlot() {
+  const day = document.getElementById('daySel').value;
+  const d = ROOMS[currentRoom].daily_detail[day];
+  const traces = [
+    { x: d.hm, y: d.temp, name: 'Temperatura (°C)', type: 'scatter', mode: 'lines', line: { color: VARS.temp.color, width: 1.3 } },
+    { x: d.hm, y: d.rh, name: 'Humedad relativa (%)', type: 'scatter', mode: 'lines', line: { color: VARS.rh.color, width: 1.3 }, yaxis: 'y2' },
+  ];
+  const layout = Object.assign({}, PLOT_LAYOUT, {
+    yaxis:  { title: '°C', gridcolor: '#2d3744' },
+    yaxis2: { title: '%', overlaying: 'y', side: 'right', showgrid: false },
+    xaxis:  { gridcolor: '#2d3744', nticks: 12 },
+  });
+  Plotly.react('plotDay', traces, layout, PLOT_CONFIG);
+}
+
+document.querySelectorAll('.toggles input').forEach(c => c.onchange = renderMainPlot);
+
+const detail = document.getElementById('detail');
+
+function renderAll() {
+  renderTabs();
+  renderHeader();
+  periodIdx = periodList().length - 1;   // periodo más reciente por defecto
+  renderPeriodSelector();
+  renderCards();
+  renderMainPlot();
+  renderDaySelector();
+  initDayPickers();
+  renderComfort();
+  renderPattern();
+  renderHeatmap();
+}
+
+renderAll();
+</script>
+</body>
+</html>
