@@ -81,16 +81,84 @@
   .legend { color: var(--muted); font-size: .9rem; margin: -4px 0 14px; max-width: 760px; }
   .btn-clear { background: var(--card2); color: var(--muted); border: 1px solid var(--border); padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: .85rem; }
   .btn-clear:hover { color: var(--txt); }
+
+  /* Layout con panel lateral */
+  .app { display: flex; min-height: 100vh; }
+  .sidebar {
+    width: 220px; flex: 0 0 220px; background: #11161d; border-right: 1px solid var(--border);
+    padding: 22px 14px; position: sticky; top: 0; height: 100vh; overflow-y: auto;
+  }
+  .sidebar .brand { font-size: 1.05rem; font-weight: 700; margin: 0 8px 18px; }
+  .sidebar nav { display: flex; flex-direction: column; gap: 4px; }
+  .sidebar nav button {
+    text-align: left; background: transparent; color: var(--muted); border: none;
+    padding: 11px 14px; border-radius: 10px; cursor: pointer; font-size: .95rem;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .sidebar nav button:hover { background: var(--card); color: var(--txt); }
+  .sidebar nav button.active { background: var(--accent); color: #1a1209; font-weight: 600; }
+  .sidebar .sep { color: #5a6675; font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; margin: 16px 10px 6px; }
+  .app .wrap { flex: 1; max-width: 1100px; margin: 0; }
+  @media (max-width: 720px) {
+    .app { flex-direction: column; }
+    .sidebar { width: auto; flex: none; height: auto; position: static; border-right: none; border-bottom: 1px solid var(--border); }
+    .sidebar nav { flex-direction: row; flex-wrap: wrap; }
+  }
+  /* Home */
+  .home-room { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 20px; margin-bottom: 18px; }
+  .home-room .hr-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px; }
+  .home-room h3 { margin: 0; font-size: 1.25rem; }
+  .home-room .hr-week { color: var(--muted); font-size: .85rem; }
+  .home-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+  .home-stat { background: var(--card2); border-radius: 12px; padding: 14px; }
+  .home-stat .l { color: var(--muted); font-size: .78rem; }
+  .home-stat .v { font-size: 1.5rem; font-weight: 700; margin-top: 4px; }
+  .home-open { margin-top: 14px; background: var(--card2); color: var(--txt); border: 1px solid var(--border); padding: 9px 16px; border-radius: 10px; cursor: pointer; font-size: .9rem; }
+  .home-open:hover { border-color: var(--accent); }
 </style>
 </head>
 <body>
-<div class="wrap">
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">🌡️ Monitor</div>
+    <nav id="nav"></nav>
+  </aside>
+
+  <main class="wrap">
+
+  <div id="homeView" style="display:none">
+    <header>
+      <h1>Resumen general</h1>
+      <div class="range">Temperatura y humedad de la última semana por habitación</div>
+    </header>
+
+    <div class="section">
+      <h2>Comparativa entre habitaciones</h2>
+      <p class="legend">Compara las tres habitaciones a lo largo del tiempo. Elige la variable y la
+      granularidad (cada punto es el promedio del periodo).</p>
+      <div class="controls">
+        <div class="seg" id="compareVar">
+          <button class="active" data-cvar="temp">Temperatura</button>
+          <button data-cvar="rh">Humedad</button>
+        </div>
+        <div class="seg" id="compareGran">
+          <button data-gran="day">Por día</button>
+          <button data-gran="week">Por semana</button>
+          <button class="active" data-gran="month">Por mes</button>
+          <button data-gran="year">Por año</button>
+        </div>
+      </div>
+      <div id="plotCompare" class="plot"></div>
+    </div>
+
+    <div id="homeRooms"></div>
+  </div>
+
+  <div id="roomView">
   <header>
     <h1 id="title">Monitor de Temperatura</h1>
     <div class="range" id="range"></div>
   </header>
-
-  <div class="room-tabs" id="roomTabs"></div>
 
   <div class="period-bar">
     <div class="seg">
@@ -174,7 +242,10 @@
     </div>
 
   </div>
-</div>
+  </div><!-- /roomView -->
+
+  </main>
+</div><!-- /app -->
 
 <script>/*__PLOTLY_JS__*/</script>
 <script>
@@ -200,18 +271,133 @@ const VARS = {
 
 function fmt(v, n) { return v == null ? '—' : Number(v).toFixed(n); }
 
-function renderTabs() {
-  const el = document.getElementById('roomTabs');
-  if (roomNames.length < 2) { el.style.display = 'none'; return; }
-  el.innerHTML = '';
+let currentView = 'home';   // 'home' | nombre de habitación
+
+function renderNav() {
+  const nav = document.getElementById('nav');
+  nav.innerHTML = '';
+  const home = document.createElement('button');
+  home.innerHTML = '🏠 Inicio';
+  home.className = currentView === 'home' ? 'active' : '';
+  home.onclick = goHome;
+  nav.appendChild(home);
+
+  const sep = document.createElement('div');
+  sep.className = 'sep'; sep.textContent = 'Habitaciones';
+  nav.appendChild(sep);
+
   roomNames.forEach(name => {
     const b = document.createElement('button');
     b.textContent = name;
-    b.className = name === currentRoom ? 'active' : '';
-    b.onclick = () => { currentRoom = name; renderAll(); };
-    el.appendChild(b);
+    b.className = currentView === name ? 'active' : '';
+    b.onclick = () => goRoom(name);
+    nav.appendChild(b);
   });
 }
+
+function goHome() {
+  currentView = 'home';
+  document.getElementById('homeView').style.display = '';
+  document.getElementById('roomView').style.display = 'none';
+  renderNav();
+  renderHome();
+  renderCompare();
+  window.scrollTo(0, 0);
+}
+
+function goRoom(name) {
+  currentView = name;
+  currentRoom = name;
+  document.getElementById('homeView').style.display = 'none';
+  document.getElementById('roomView').style.display = '';
+  renderNav();
+  renderRoom();
+  window.scrollTo(0, 0);
+}
+
+function renderHome() {
+  const cont = document.getElementById('homeRooms');
+  cont.innerHTML = roomNames.map(name => {
+    const w = ROOMS[name].weeks;
+    const p = w[w.length - 1];   // última semana
+    return `
+      <div class="home-room">
+        <div class="hr-head">
+          <h3>${name}</h3>
+          <span class="hr-week">Semana ${p.label}</span>
+        </div>
+        <div class="home-grid">
+          <div class="home-stat"><div class="l">🌡️ Temp. máxima</div><div class="v" style="color:var(--accent)">${fmt(p.temp_max,1)} °C</div></div>
+          <div class="home-stat"><div class="l">🌡️ Temp. mínima</div><div class="v" style="color:var(--accent2)">${fmt(p.temp_min,1)} °C</div></div>
+          <div class="home-stat"><div class="l">💧 Humedad máxima</div><div class="v">${p.rh_max}%</div></div>
+          <div class="home-stat"><div class="l">💧 Humedad mínima</div><div class="v" style="color:#5fd0a0">${p.rh_min}%</div></div>
+        </div>
+        <button class="home-open" onclick="goRoom('${name.replace(/'/g, "\\'")}')">Ver detalle de ${name} →</button>
+      </div>`;
+  }).join('');
+}
+
+// --- Comparativa entre habitaciones (pestaña Inicio) ---
+let compareGran = 'month';   // 'day' | 'week' | 'month' | 'year'
+let compareVar = 'temp';     // 'temp' | 'rh'
+const MESES_ABR = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+const ROOM_COLORS = ['#ff7b54', '#54a0ff', '#5fd0a0', '#c792ea', '#ffd166'];
+
+function bucketKey(iso, gran) {
+  const d = new Date(iso);                 // "2026-03-14T08:00" (hora local)
+  const y = d.getFullYear(), m = d.getMonth();
+  const pad = n => String(n).padStart(2, '0');
+  if (gran === 'year')  return { key: String(y), label: String(y) };
+  if (gran === 'month') return { key: `${y}-${pad(m+1)}`, label: `${MESES_ABR[m]} ${y}` };
+  if (gran === 'week') {                    // lunes de la semana
+    const t = new Date(y, m, d.getDate());
+    t.setDate(t.getDate() - ((t.getDay() + 6) % 7));
+    return { key: `${t.getFullYear()}-${pad(t.getMonth()+1)}-${pad(t.getDate())}`,
+             label: `${pad(t.getDate())}/${pad(t.getMonth()+1)}` };
+  }
+  return { key: `${y}-${pad(m+1)}-${pad(d.getDate())}`, label: `${pad(d.getDate())}/${pad(m+1)}` };
+}
+
+function renderCompare() {
+  const traces = roomNames.map((name, i) => {
+    const h = ROOMS[name].hourly, ts = h.t, vals = h[compareVar];
+    const sums = new Map(), counts = new Map(), labels = new Map();
+    for (let j = 0; j < ts.length; j++) {
+      const v = vals[j];
+      if (v == null) continue;
+      const { key, label } = bucketKey(ts[j], compareGran);
+      sums.set(key, (sums.get(key) || 0) + v);
+      counts.set(key, (counts.get(key) || 0) + 1);
+      labels.set(key, label);
+    }
+    const keys = [...sums.keys()].sort();
+    return {
+      x: keys.map(k => labels.get(k)),
+      y: keys.map(k => +(sums.get(k) / counts.get(k)).toFixed(2)),
+      type: 'scatter', mode: 'lines+markers', name,
+      line: { color: ROOM_COLORS[i % ROOM_COLORS.length], width: 2 },
+    };
+  });
+  const layout = Object.assign({}, PLOT_LAYOUT, {
+    margin: { t: 20, r: 30, b: 70, l: 55 },
+    yaxis: { title: compareVar === 'temp' ? 'Temperatura (°C)' : 'Humedad relativa (%)', gridcolor: '#2d3744' },
+    xaxis: { type: 'category', tickangle: -45, gridcolor: '#2d3744' },
+  });
+  Plotly.react('plotCompare', traces, layout, PLOT_CONFIG);
+}
+
+document.getElementById('compareVar').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  compareVar = b.dataset.cvar;
+  document.querySelectorAll('#compareVar button').forEach(x => x.classList.toggle('active', x === b));
+  renderCompare();
+});
+document.getElementById('compareGran').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  compareGran = b.dataset.gran;
+  document.querySelectorAll('#compareGran button').forEach(x => x.classList.toggle('active', x === b));
+  renderCompare();
+});
 
 function renderHeader() {
   const s = ROOMS[currentRoom].summary;
@@ -436,13 +622,13 @@ function renderHeatmap() {
   el.style.height = height + 'px';
   const trace = {
     z, x: hours, y, type: 'heatmap',
-    colorscale: 'RdBu', reversescale: true,
+    colorscale: 'RdBu', reversescale: false,
     colorbar: { title: '°C' }, hovertemplate: '%{y} · %{x}<br>%{z} °C<extra></extra>',
   };
   const layout = Object.assign({}, PLOT_LAYOUT, {
     margin: { t: 20, r: 20, b: 50, l: 70 },
     xaxis: { title: 'Hora del día', gridcolor: '#2d3744' },
-    yaxis: { title: ytitle, autorange: 'reversed', gridcolor: '#2d3744' },
+    yaxis: { title: ytitle, gridcolor: '#2d3744' },
   });
   Plotly.react('plotHeatmap', [trace], layout, PLOT_CONFIG);
 }
@@ -514,10 +700,16 @@ document.querySelectorAll('.toggles input').forEach(c => c.onchange = renderMain
 
 const detail = document.getElementById('detail');
 
-function renderAll() {
-  renderTabs();
+function renderRoom() {
   renderHeader();
-  periodIdx = periodList().length - 1;   // periodo más reciente por defecto
+  periodMode = 'week'; periodIdx = periodList().length - 1;
+  patternDay = null; document.getElementById('patternDay').value = '';
+  comfortMode = 'all'; heatmapMode = 'day';
+  document.querySelectorAll('.seg button[data-mode]').forEach(x => x.classList.toggle('active', x.dataset.mode === 'week'));
+  document.querySelectorAll('.seg button[data-comf]').forEach(x => x.classList.toggle('active', x.dataset.comf === 'all'));
+  document.querySelectorAll('.seg button[data-hm]').forEach(x => x.classList.toggle('active', x.dataset.hm === 'day'));
+  document.getElementById('comfortDay').style.display = 'none';
+  document.getElementById('heatmapDay').style.display = 'none';
   renderPeriodSelector();
   renderCards();
   renderMainPlot();
@@ -528,7 +720,8 @@ function renderAll() {
   renderHeatmap();
 }
 
-renderAll();
+renderNav();
+goHome();
 </script>
 </body>
 </html>

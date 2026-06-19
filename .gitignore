@@ -1,3 +1,4 @@
 plotly.min.js
 .remember/
 .DS_Store
+*.csv

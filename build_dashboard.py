@@ -25,8 +25,11 @@ import pandas as pd
 BASE = Path(__file__).resolve().parent
 
 # (nombre visible, ruta del CSV). Para agregar habitaciones, añade más tuplas.
+# Si un CSV no existe todavía, se omite con un aviso (no es error).
 ROOMS = [
     ("Recámara", BASE / "recamara _data.csv"),
+    ("Cocina", BASE / "cocina_data.csv"),
+    ("Exterior", BASE / "exterior_data.csv"),
 ]
 
 OUTPUT = BASE / "index.html"
@@ -158,11 +161,13 @@ def build_room_data(df: pd.DataFrame) -> dict:
         "abs": round_series(hourly_df["abs"], 2),
     }
 
-    # Detalle por minuto agrupado por día
+    # Detalle agrupado por día (submuestreo a 5 min para aligerar el HTML)
+    DETAIL_STEP = 5  # minutos entre puntos del gráfico "Un día"
     df = df.assign(_day=df["Date"].dt.strftime("%Y-%m-%d"),
                    _hm=df["Date"].dt.strftime("%H:%M"))
     daily_detail = {}
     for day, g in df.groupby("_day"):
+        g = g.iloc[::DETAIL_STEP]
         daily_detail[day] = {
             "hm": g["_hm"].tolist(),
             "temp": round_series(g[COL_TEMP], 1),
@@ -258,9 +263,15 @@ def main() -> None:
     print("Generando dashboard...")
     rooms = {}
     for name, path in ROOMS:
+        if not path.exists():
+            print(f"- Omitiendo {name}: no se encontró {path.name}")
+            continue
         print(f"- Procesando {name} ({path.name})")
         df = load_csv(path)
         rooms[name] = build_room_data(df)
+
+    if not rooms:
+        sys.exit("ERROR: no se procesó ninguna habitación.")
 
     plotly_js = get_plotly_js()
     html = render_html(rooms, plotly_js)
